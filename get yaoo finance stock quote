@@ -1,0 +1,47 @@
+Function StockQuote(ticker As String)
+
+    ' Get near real-time stock quote from Yahoo via JSON query
+
+    Dim URL As String, response As String, stripped As String, inbits() As String, i As Long
+    Dim request As WinHttp.WinHttpRequest                               ' needs Tools|References|WinHTTP Services
+    On Error GoTo Err
+
+    URL = "https://query2.finance.yahoo.com/v7/finance/quote?symbols=" & Trim(ticker)
+    Set request = New WinHttp.WinHttpRequest
+    With request
+        .Open "GET", URL, True
+        .SetRequestHeader "Content-Type", "application/x-www-form-urlencoded; charset=UTF-8"
+        .Send
+        .WaitForResponse
+        response = .responseText
+    End With
+
+    If InStr(response, """result"":[]") <> 0 Then GoTo Err              ' ticker not found
+    
+    'kludge parse: strip JSON delimiters and quotes
+    stripped = Replace(Replace(Replace(Replace(Replace(response, "[", ""), "]", ""), "{", ""), "}", ""), """", "")
+
+    stripped = Replace(stripped, ":", ":,")                             ' keep colons for readability, but make them delimit
+    inbits = split(stripped, ",")                                       ' split
+    
+    i = LBound(inbits)
+    Do While inbits(i) <> "regularMarketPrice:" And i <= UBound(inbits) ' find "regularMarketPrice:" tag
+        i = i + 1
+    Loop
+    
+    If i > UBound(inbits) Or Not IsNumeric(inbits(i + 1)) Then          ' not found; look for previous close
+        i = LBound(inbits)
+        Do While inbits(i) <> "regularMarketPreviousClose:" _
+                                            And i <= UBound(inbits)
+            i = i + 1
+        Loop
+        If i > UBound(inbits) Or Not IsNumeric(inbits(i + 1)) Then GoTo Err
+    End If
+
+    StockQuote = Val(inbits(i + 1))                                     ' price is next element
+    Exit Function
+    
+Err:
+    StockQuote = CVErr(xlErrNA)
+
+End Function
